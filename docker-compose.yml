@@ -1,0 +1,136 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    container_name: meme_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - backend
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: meme_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+
+  migrations:
+    build: ./alembic
+    container_name: migrations
+    depends_on:
+      - db
+    networks:
+      - backend
+    command: [ "alembic", "upgrade", "head" ]
+
+  scrapers:
+    build: ./scrapers
+    container_name: scrapers
+    depends_on:
+      - kafka
+      - migrations
+    environment:
+      - KAFKA_BROKER=${KAFKA_BROKER}
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT}
+    networks:
+      - backend
+
+  sentiment:
+    build: ./sentiment
+    container_name: sentiment_svc
+    depends_on:
+      - kafka
+      - migrations
+    environment:
+      - KAFKA_BROKER=${KAFKA_BROKER}
+    networks:
+      - backend
+
+  aggregator:
+    build: ./aggregator
+    container_name: aggregator
+    depends_on:
+      - db
+      - kafka
+      - migrations
+    environment:
+      - KAFKA_BROKER=${KAFKA_BROKER}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - backend
+
+  api-service:
+    build: ./api-service
+    container_name: meme_api
+    depends_on:
+      - db
+      - kafka
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - KAFKA_BROKER=${KAFKA_BROKER}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - backend
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    container_name: meme_frontend
+    depends_on:
+      - api-service
+    networks:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:
+
+networks:
+  backend:
+    driver: bridge
