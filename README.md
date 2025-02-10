@@ -28,7 +28,7 @@ coin-tracking-project/
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/coin-tracking-project.git
+git clone https://github.com/yanmo42/coin-tracking-project.git
 cd coin-tracking-project
 ```
 
